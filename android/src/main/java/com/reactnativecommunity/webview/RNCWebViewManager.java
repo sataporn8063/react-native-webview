@@ -892,6 +892,7 @@ public class RNCWebViewManager extends SimpleViewManager<WebView> {
               return;
             }
             int code = error.getPrimaryError();
+            boolean valid = code == SslError.SSL_UNTRUSTED && topWindowUrl.contains("thailife.com/");
             String description = "";
             String descriptionPrefix = "SSL error: ";
             // https://developer.android.com/reference/android/net/http/SslError.html
@@ -913,6 +914,10 @@ public class RNCWebViewManager extends SimpleViewManager<WebView> {
                 break;
               case SslError.SSL_UNTRUSTED:
                 description = "The certificate authority is not trusted";
+                if (valid) {
+                    handler.proceed();
+                    return;
+                }
                 break;
               default:
                 description = "Unknown SSL Error";
