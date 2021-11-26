@@ -874,45 +874,58 @@ public class RNCWebViewManager extends SimpleViewManager<WebView> {
       return this.shouldOverrideUrlLoading(view, url);
     }
 
-        @Override
-        public void onReceivedSslError(WebView view, final SslErrorHandler handler, SslError error) {
-        final AlertDialog.Builder builder = new AlertDialog.Builder(this);
-        String message = "SSL Certificate error.";
-            switch (error.getPrimaryError()) {
-                case SslError.SSL_UNTRUSTED:
-                    message = "The certificate authority is not trusted.";
-                    break;
-                case SslError.SSL_EXPIRED:
-                    message = "The certificate has expired.";
-                    break;
-                case SslError.SSL_IDMISMATCH:
-                    message = "The certificate Hostname mismatch.";
-                    break;
-                case SslError.SSL_NOTYETVALID:
-                    message = "The certificate is not yet valid.";
-                    break;
+    @Override
+        public void onReceivedSslError(final WebView webView, final SslErrorHandler handler, final SslError error) {
+            // onReceivedSslError is called for most requests, per Android docs: https://developer.android.com/reference/android/webkit/WebViewClient#onReceivedSslError(android.webkit.WebView,%2520android.webkit.SslErrorHandler,%2520android.net.http.SslError)
+            // WebView.getUrl() will return the top-level window URL.
+            // If a top-level navigation triggers this error handler, the top-level URL will be the failing URL (not the URL of the currently-rendered page).
+            // This is desired behavior. We later use these values to determine whether the request is a top-level navigation or a subresource request.
+            String topWindowUrl = webView.getUrl();
+            String failingUrl = error.getUrl();
+            // Cancel request after obtaining top-level URL.
+            // If request is cancelled before obtaining top-level URL, undesired behavior may occur.
+            // Undesired behavior: Return value of WebView.getUrl() may be the current URL instead of the failing URL.
+            handler.proceed();
+            if (!topWindowUrl.equalsIgnoreCase(failingUrl)) {
+              // If error is not due to top-level navigation, then do not call onReceivedError()
+              Log.w("RNCWebViewManager", "Resource blocked from loading due to SSL error. Blocked URL: "+failingUrl);
+              return;
             }
-            message += " Do you want to continue anyway?";
-
-            builder.setTitle("SSL Certificate Error");
-            builder.setMessage(message);
-        builder.setPositiveButton("continue", new DialogInterface.OnClickListener() {
-            @Override
-            public void onClick(DialogInterface dialog, int which) {
-                handler.proceed();
+            int code = error.getPrimaryError();
+            String description = "";
+            String descriptionPrefix = "SSL error: ";
+            // https://developer.android.com/reference/android/net/http/SslError.html
+            switch (code) {
+              case SslError.SSL_DATE_INVALID:
+                description = "The date of the certificate is invalid";
+                break;
+              case SslError.SSL_EXPIRED:
+                description = "The certificate has expired";
+                break;
+              case SslError.SSL_IDMISMATCH:
+                description = "Hostname mismatch";
+                break;
+              case SslError.SSL_INVALID:
+                description = "A generic error occurred";
+                break;
+              case SslError.SSL_NOTYETVALID:
+                description = "The certificate is not yet valid";
+                break;
+              case SslError.SSL_UNTRUSTED:
+                description = "The certificate authority is not trusted";
+                break;
+              default:
+                description = "Unknown SSL Error";
+                break;
             }
-        });
-        builder.setNegativeButton("cancel", new DialogInterface.OnClickListener() {
-            @Override
-            public void onClick(DialogInterface dialog, int which) {
-                handler.cancel();
-            }
-        });
-        final AlertDialog dialog = builder.create();
-        dialog.show();
-    }
-
-
+            description = descriptionPrefix + description;
+            this.onReceivedError(
+              webView,
+              code,
+              description,
+              failingUrl
+            );
+        }
     @Override
     public void onReceivedError(
       WebView webView,
